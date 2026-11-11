@@ -1,0 +1,5 @@
+build/
+campuscompute
+campus.log
+*.o
+*.d
