@@ -57,8 +57,12 @@ processes that cannot finish).
     tests/    bad-input job files
 
 ## Logger, IPC, worker and resource-limit modules
-<!-- Person B: describe design, IPC object names, accepted `limit` values -->
+- **Logger** (`logger.c`): producer threads put messages into a circular buffer of capacity 4 and one consumer thread writes them to `campus.log`. A mutex protects the queue, and the condition variables `not_full` and `not_empty` coordinate the threads. All threads are joined at the end.
+- **IPC** (`ipc.c`): a writer and a reader process exchange a job list through POSIX shared memory (`shm_open`, `mmap`), synchronised with two named semaphores. The object names include the username (for example `/campus_shm_janhvi`, `/campus_ready_janhvi`, `/campus_done_janhvi`) and are released with `munmap`, `shm_unlink`, `sem_close` and `sem_unlink`.
+- **Worker** (`worker.c`): the parent creates workers with `fork()` and collects their status with `waitpid()`. `worker fail` runs controlled SIMULATED failures (exit code 3, `abort()`, `SIGSEGV`); they are not real OS failures.
+- **Resource limits** (`rlimit_demo.c`): `limit files|cpu|mem|all` applies `setrlimit()` (`RLIMIT_NOFILE`, `RLIMIT_CPU`, `RLIMIT_AS`) inside child processes, so the parent is unaffected.
 
 ## Cleanup
 - `make clean` removes build output and `campus.log`
-- <!-- Person B: how to verify no leftover /dev/shm objects, semaphores or processes -->
+- Verify nothing is left behind: `ps aux | grep '[c]ampuscompute'` and `ls /dev/shm | grep campus` should both print nothing
+- The program removes only the IPC objects it creates (names starting with `/campus_`)
