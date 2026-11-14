@@ -33,7 +33,7 @@ static void print_usage(FILE *out)
         "  ipc                               shared memory + semaphore demo\n"
         "  banker safe|unsafe                Banker's algorithm test cases\n"
         "  worker normal|fail                fork/waitpid (fail = SIMULATED failure)\n"
-        "  limit [which]                     setrlimit demonstration\n"
+        "  limit [files|cpu|mem|all]         setrlimit demonstration (default: all)\n"
         "  demo [jobs.txt]                   run every feature and print a summary\n\n"
         "Job file format: one job per line: id arrival burst priority\n"
         "(lines starting with # are comments; lower priority number = higher priority)\n",

@@ -20,7 +20,7 @@ Course: Operating Systems (UE25CS242A), Level 3 Mini-Project.
     ./campuscompute ipc
     ./campuscompute banker safe|unsafe
     ./campuscompute worker normal|fail
-    ./campuscompute limit [which]
+    ./campuscompute limit [files|cpu|mem|all]
     ./campuscompute demo [jobs.txt]      # runs every feature and prints a summary
 
 Each feature runs independently. Invalid commands or input print an error and the usage text.
