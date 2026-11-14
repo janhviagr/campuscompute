@@ -6,9 +6,17 @@
 #include "common.h"
 #include "scheduler.h"
 #include "banker.h"
-#include "modules.h"
+#include "logger.h"
+#include "ipc.h"
+#include "worker.h"
+#include "rlimit_demo.h"
 
 #define DEFAULT_JOBS_FILE "jobs.txt"
+#define DEFAULT_PRODUCERS 3
+#define DEFAULT_MESSAGES  5
+#define MAX_PRODUCERS    64
+#define MAX_MESSAGES   1000
+#define DEFAULT_LIMIT  "all"   /* CHANGE to a value that Person B's run_limit() accepts */
 
 static void print_usage(FILE *out)
 {
@@ -21,15 +29,15 @@ static void print_usage(FILE *out)
         "  sched rr       [jobs.txt] [q]     Round Robin (quantum q, default %d)\n"
         "  sched priority [jobs.txt]         non-preemptive Priority scheduling\n"
         "  sched compare  [jobs.txt] [q]     all three policies on the same jobs\n"
-        "  logger                            producer-consumer logger (threads)\n"
+        "  logger [producers] [messages]     producer-consumer logger (default %d producers, %d messages each)\n"
         "  ipc                               shared memory + semaphore demo\n"
         "  banker safe|unsafe                Banker's algorithm test cases\n"
         "  worker normal|fail                fork/waitpid (fail = SIMULATED failure)\n"
-        "  limit                             setrlimit demonstration\n"
+        "  limit [which]                     setrlimit demonstration\n"
         "  demo [jobs.txt]                   run every feature and print a summary\n\n"
         "Job file format: one job per line: id arrival burst priority\n"
         "(lines starting with # are comments; lower priority number = higher priority)\n",
-        RR_QUANTUM);
+        RR_QUANTUM, DEFAULT_PRODUCERS, DEFAULT_MESSAGES);
 }
 
 static int bad_usage(const char *msg)
@@ -40,12 +48,12 @@ static int bad_usage(const char *msg)
 }
 
 /* Parse a positive integer; returns -1 if the text is not one. */
-static int parse_positive(const char *s)
+static int parse_positive(const char *s, int max)
 {
     char *end;
     errno = 0;
     long v = strtol(s, &end, 10);
-    if (errno != 0 || end == s || *end != '\0' || v <= 0 || v > 1000000) return -1;
+    if (errno != 0 || end == s || *end != '\0' || v <= 0 || v > max) return -1;
     return (int)v;
 }
 
@@ -60,7 +68,7 @@ static int run_demo(const char *jobs_file)
     steps[k++].rc = run_scheduler("compare", jobs_file, RR_QUANTUM);
     printf("\n");
     steps[k].name = "Producer-consumer logger";
-    steps[k++].rc = run_logger();
+    steps[k++].rc = run_logger(DEFAULT_PRODUCERS, DEFAULT_MESSAGES);
     printf("\n");
     steps[k].name = "Shared-memory IPC";
     steps[k++].rc = run_ipc();
@@ -72,13 +80,13 @@ static int run_demo(const char *jobs_file)
     steps[k++].rc = run_banker(0);
     printf("\n");
     steps[k].name = "Worker: normal completion";
-    steps[k++].rc = run_worker(0);
+    steps[k++].rc = run_worker("normal");
     printf("\n");
     steps[k].name = "Worker: simulated failure";
-    steps[k++].rc = run_worker(1);
+    steps[k++].rc = run_worker("fail");
     printf("\n");
     steps[k].name = "Resource limit";
-    steps[k++].rc = run_limit();
+    steps[k++].rc = run_limit(DEFAULT_LIMIT);
 
     printf("\n================ DEMO SUMMARY ================\n");
     int failures = 0;
@@ -109,7 +117,7 @@ int main(int argc, char *argv[])
         if (argc == 5) {
             if (strcmp(algo, "rr") != 0 && strcmp(algo, "compare") != 0)
                 return bad_usage("a quantum is only valid with 'sched rr' or 'sched compare'");
-            quantum = parse_positive(argv[4]);
+            quantum = parse_positive(argv[4], 1000000);
             if (quantum < 0) return bad_usage("quantum must be a positive integer");
         }
         return run_scheduler(algo, file, quantum) == 0 ? 0 : 1;
@@ -124,14 +132,25 @@ int main(int argc, char *argv[])
 
     if (strcmp(cmd, "worker") == 0) {
         if (argc != 3) return bad_usage("worker needs: normal|fail");
-        if (strcmp(argv[2], "normal") == 0) return run_worker(0) == 0 ? 0 : 1;
-        if (strcmp(argv[2], "fail") == 0)   return run_worker(1) == 0 ? 0 : 1;
-        return bad_usage("worker mode must be 'normal' or 'fail'");
+        if (strcmp(argv[2], "normal") != 0 && strcmp(argv[2], "fail") != 0)
+            return bad_usage("worker mode must be 'normal' or 'fail'");
+        return run_worker(argv[2]) == 0 ? 0 : 1;
     }
 
-    if (strcmp(cmd, "logger") == 0) { if (argc != 2) return bad_usage("logger takes no arguments"); return run_logger() == 0 ? 0 : 1; }
+    if (strcmp(cmd, "logger") == 0) {
+        if (argc > 4) return bad_usage("logger needs: [producers] [messages]");
+        int producers = DEFAULT_PRODUCERS, messages = DEFAULT_MESSAGES;
+        if (argc >= 3 && (producers = parse_positive(argv[2], MAX_PRODUCERS)) < 0)
+            return bad_usage("producers must be a positive integer (maximum 64)");
+        if (argc == 4 && (messages = parse_positive(argv[3], MAX_MESSAGES)) < 0)
+            return bad_usage("messages must be a positive integer (maximum 1000)");
+        return run_logger(producers, messages) == 0 ? 0 : 1;
+    }
     if (strcmp(cmd, "ipc") == 0)    { if (argc != 2) return bad_usage("ipc takes no arguments");    return run_ipc() == 0 ? 0 : 1; }
-    if (strcmp(cmd, "limit") == 0)  { if (argc != 2) return bad_usage("limit takes no arguments");  return run_limit() == 0 ? 0 : 1; }
+    if (strcmp(cmd, "limit") == 0) {
+        if (argc > 3) return bad_usage("limit needs at most one argument: [which]");
+        return run_limit(argc == 3 ? argv[2] : DEFAULT_LIMIT) == 0 ? 0 : 1;
+    }
 
     if (strcmp(cmd, "demo") == 0) {
         if (argc > 3) return bad_usage("demo takes at most one argument (job file)");
